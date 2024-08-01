@@ -238,6 +238,36 @@ bool Conv3dOpInferSymbolicShape(pir::Operation *op,
   return Conv2dOpInferSymbolicShape(op, infer_context);
 }
 
+bool DistOpInferSymbolicShape(pir::Operation *op,
+                              pir::InferSymbolicShapeContext *infer_context) {
+  const auto &x_shape_or_data =
+      infer_context->GetShapeOrDataForValue(op->operand_source(0));
+  const auto &y_shape_or_data =
+      infer_context->GetShapeOrDataForValue(op->operand_source(1));
+  const auto &x_shape = x_shape_or_data.shape();
+  const auto &y_shape = y_shape_or_data.shape();
+
+  PADDLE_ENFORCE_NE(
+      x_shape.size(),
+      0,
+      common::errors::InvalidArgument("The Input(X) has not been initialized "
+                                      "properly. The shape of Input(X) = [%s].",
+                                      x_shape));
+  PADDLE_ENFORCE_NE(
+      y_shape.size(),
+      0,
+      common::errors::InvalidArgument("The Input(Y) has not been initialized "
+                                      "properly. The shape of Input(Y) = [%s].",
+                                      y_shape));
+
+  std::vector<symbol::DimExpr> output_shape_vector;
+  symbol::TensorShapeOrDataDimExprs output_shape(output_shape_vector);
+  infer_context->SetShapeOrDataForValue(
+      op->result(0), symbol::ShapeOrDataDimExprs{output_shape});
+
+  return true;
+}
+
 bool EmbeddingOpInferSymbolicShape(
     pir::Operation *op, pir::InferSymbolicShapeContext *infer_context) {
   const std::vector<symbol::DimExpr> &x_dims =
