@@ -1411,6 +1411,79 @@ bool MovingAverageAbsMaxScale_OpInferSymbolicShape(
 //   return true;
 // }
 
+bool NllLossRawOpInferSymbolicShape(
+    pir::Operation *op, pir::InferSymbolicShapeContext *infer_context) {
+  const auto &input_shape_or_data =
+      infer_context->GetShapeOrDataForValue(op->operand_source(0));
+  const auto &label_shape_or_data =
+      infer_context->GetShapeOrDataForValue(op->operand_source(1));
+
+  std::vector<symbol::DimExpr> input_shape = input_shape_or_data.shape();
+  std::vector<symbol::DimExpr> label_shape = label_shape_or_data.shape();
+
+  PADDLE_ENFORCE_EQ(input_shape.size() == 2 || input_shape.size() == 4,
+                    true,
+                    common::errors::InvalidArgument(
+                        "The tensor rank of Input(X) must be 2 or 4."));
+
+  if (infer_context->IsRuntime() ||
+      !input_shape_or_data.contain_unknown_dim() ||
+      !label_shape_or_data.contain_unknown_dim()) {
+    infer_context->AddEqualCstr(input_shape[0], label_shape[0]);
+
+    if (op->operand_source(2)) {
+      const auto &weight_shape_or_data =
+          infer_context->GetShapeOrDataForValue(op->operand_source(2));
+      std::vector<symbol::DimExpr> weight_shape = weight_shape_or_data.shape();
+
+      PADDLE_ENFORCE_EQ(weight_shape.size(),
+                        1,
+                        common::errors::InvalidArgument(
+                            "Input(Weight) should be a 1D tensor."));
+      infer_context->AddEqualCstr(input_shape[1], weight_shape[0]);
+    }
+  }
+
+  std::string reduction =
+      op->attribute<pir::StrAttribute>("reduction").AsString();
+
+  std::vector<symbol::DimExpr> out_shape;
+  if (input_shape.size() == 2) {
+    if (reduction == "none") {
+      out_shape = {input_shape[0]};
+    }
+  } else if (input_shape.size() == 4) {
+    PADDLE_ENFORCE_EQ(label_shape.size(),
+                      3,
+                      common::errors::InvalidArgument(
+                          "Expected Input(Label) dimensions=3, received %d.",
+                          label_shape.size()));
+
+    infer_context->AddEqualCstr(input_shape[0], label_shape[0]);
+    infer_context->AddEqualCstr(input_shape[2], label_shape[1]);
+    infer_context->AddEqualCstr(input_shape[3], label_shape[2]);
+
+    if (reduction == "none") {
+      out_shape = {input_shape[0], input_shape[2], input_shape[3]};
+    }
+  }
+
+  if (reduction != "none") {
+    out_shape = {};
+  }
+
+  infer_context->SetShapeOrDataForValue(
+      op->result(0),
+      symbol::ShapeOrDataDimExprs{
+          symbol::TensorShapeOrDataDimExprs(out_shape)});
+
+  infer_context->SetShapeOrDataForValue(
+      op->result(1),
+      symbol::ShapeOrDataDimExprs{symbol::TensorShapeOrDataDimExprs({})});
+
+  return true;
+}
+
 // bool PsroiPoolOpInferSymbolicShape(pir::Operation *op,
 //                                    pir::InferSymbolicShapeContext
 //                                    *infer_context) {
