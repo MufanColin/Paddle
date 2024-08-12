@@ -361,6 +361,35 @@ bool CrossOpInferSymbolicShape(pir::Operation *op,
   return true;
 }
 
+bool DistOpInferSymbolicShape(pir::Operation *op,
+                              pir::InferSymbolicShapeContext *infer_context) {
+  const symbol::ShapeOrDataDimExprs &x_shape =
+      infer_context->GetShapeOrDataForValue(op->operand_source(0));
+  const symbol::ShapeOrDataDimExprs &y_shape =
+      infer_context->GetShapeOrDataForValue(op->operand_source(1));
+
+  PADDLE_ENFORCE_NE(x_shape.shape().size(),
+                    0,
+                    common::errors::InvalidArgument(
+                        "The Input(X) has not been initialized properly. The "
+                        "shape of Input(X) = [%s].",
+                        x_shape.shape()));
+  PADDLE_ENFORCE_NE(y_shape.shape().size(),
+                    0,
+                    common::errors::InvalidArgument(
+                        "The Input(Y) has not been initialized properly. The "
+                        "shape of Input(Y) = [%s].",
+                        y_shape.shape()));
+
+  infer_context->SetShapeOrDataForValue(op->result(0),
+                                        symbol::ShapeOrDataDimExprs{});
+
+  infer_context->SetShapeOrDataForValue(op->result(0),
+                                        symbol::ShapeOrDataDimExprs{});
+
+  return true;
+}
+
 // bool DotOpInferSymbolicShape(pir::Operation *op,
 //                              pir::InferSymbolicShapeContext *infer_context) {
 //   // pass
