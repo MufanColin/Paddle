@@ -1419,6 +1419,20 @@ bool NllLossRawOpInferSymbolicShape(
   const symbol::ShapeOrDataDimExprs &label_shape =
       infer_context->GetShapeOrDataForValue(op->operand_source(1));
 
+  // Convert symbol::ShapeOrDataDimExprs to common::DDim
+  auto to_ddim = [](const std::vector<symbol::DimExpr> &shape) -> common::DDim {
+    std::vector<int64_t> dims;
+    for (const auto &dim : shape) {
+      // Assuming DimExpr has a method to get the size or value
+      dims.push_back(
+          dim.size());  // Replace with appropriate method to get value
+    }
+    return common::DDim(dims);
+  };
+
+  common::DDim input_ddim = to_ddim(input_shape.shape());
+  common::DDim label_ddim = to_ddim(label_shape.shape());
+
   // Check the number of dimensions for input tensor
   size_t input_dims_size = input_shape.shape().size();
   PADDLE_ENFORCE_EQ(input_dims_size == 2 || input_dims_size == 4,
@@ -1426,38 +1440,39 @@ bool NllLossRawOpInferSymbolicShape(
                     common::errors::InvalidArgument(
                         "The tensor rank of Input(X) must be 2 or 4."));
 
-  bool contain_unknown_dim = common::contain_unknown_dim(input_shape.shape()) ||
-                             common::contain_unknown_dim(label_shape.shape());
+  bool contain_unknown_dim = common::contain_unknown_dim(input_ddim) ||
+                             common::contain_unknown_dim(label_ddim);
   bool check = op->attribute<pir::BoolAttribute>("is_runtime").data() ||
                !contain_unknown_dim;
   if (check) {
     PADDLE_ENFORCE_EQ(
-        input_shape.shape()[0],
-        label_shape.shape()[0],
+        input_ddim[0],
+        label_ddim[0],
         common::errors::InvalidArgument(
             "ShapeError: Expected input batch_size to match label batch_size,"
             "But received: the Input(x) batch_size is [%s], the Input(label) "
             " batch_size is [%s].",
-            input_shape.shape()[0],
-            label_shape.shape()[0]));
+            input_ddim[0],
+            label_ddim[0]));
 
     if (op->operand_source(2)) {  // weight
       const symbol::ShapeOrDataDimExprs &weight_shape =
           infer_context->GetShapeOrDataForValue(op->operand_source(2));
-      PADDLE_ENFORCE_EQ(weight_shape.shape().size(),
+      auto weight_ddim = to_ddim(weight_shape.shape());
+      PADDLE_ENFORCE_EQ(weight_ddim.size(),
                         1,
                         common::errors::InvalidArgument(
                             "Input(Weight) should be a 1D tensor."));
       PADDLE_ENFORCE_EQ(
-          input_shape.shape()[1],
-          weight_shape.shape()[0],
+          input_ddim[1],
+          weight_ddim[0],
           common::errors::InvalidArgument(
               "Expected input tensor Weight's size should equal "
               "to the first dimension of the input tensor X. But received "
               "Weight's "
               "size is %d, the first dimension of input X is %d",
-              weight_shape.shape()[0],
-              input_shape.shape()[1]));
+              weight_ddim[0],
+              input_ddim[1]));
     }
   }
 
@@ -1478,10 +1493,10 @@ bool NllLossRawOpInferSymbolicShape(
                           "Expected Input(Label) dimensions=3, received %d.",
                           label_shape.shape().size()));
     PADDLE_ENFORCE_EQ(
-        input_shape.shape()[0],
-        label_shape.shape()[0] && input_shape.shape()[2],
-        label_shape.shape()[1] && input_shape.shape()[3],
-        label_shape.shape()[2],
+        input_ddim[0],
+        label_ddim[0] && input_ddim[2],
+        label_ddim[1] && input_ddim[3],
+        label_ddim[2],
         common::errors::InvalidArgument("Input(X) tensor shape should "
                                         "match to Input(Label) tensor "
                                         "shape."));
