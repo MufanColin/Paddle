@@ -1413,70 +1413,94 @@ bool MovingAverageAbsMaxScale_OpInferSymbolicShape(
 
 bool NllLossRawOpInferSymbolicShape(
     pir::Operation *op, pir::InferSymbolicShapeContext *infer_context) {
-  const auto &input_shape_or_data =
+  // Get input shapes
+  const symbol::ShapeOrDataDimExprs &input_shape =
       infer_context->GetShapeOrDataForValue(op->operand_source(0));
-  const auto &label_shape_or_data =
+  const symbol::ShapeOrDataDimExprs &label_shape =
       infer_context->GetShapeOrDataForValue(op->operand_source(1));
 
-  std::vector<symbol::DimExpr> input_shape = input_shape_or_data.shape();
-  std::vector<symbol::DimExpr> label_shape = label_shape_or_data.shape();
-
-  PADDLE_ENFORCE_EQ(input_shape.size() == 2 || input_shape.size() == 4,
+  // Check the number of dimensions for input tensor
+  size_t input_dims_size = input_shape.shape().size();
+  PADDLE_ENFORCE_EQ(input_dims_size == 2 || input_dims_size == 4,
                     true,
                     common::errors::InvalidArgument(
                         "The tensor rank of Input(X) must be 2 or 4."));
 
-  if (infer_context->IsRuntime() ||
-      !input_shape_or_data.contain_unknown_dim() ||
-      !label_shape_or_data.contain_unknown_dim()) {
-    infer_context->AddEqualCstr(input_shape[0], label_shape[0]);
+  bool contain_unknown_dim = common::contain_unknown_dim(input_shape.shape()) ||
+                             common::contain_unknown_dim(label_shape.shape());
+  bool check = op->attribute<pir::BoolAttribute>("is_runtime").data() ||
+               !contain_unknown_dim;
+  if (check) {
+    PADDLE_ENFORCE_EQ(
+        input_shape.shape()[0],
+        label_shape.shape()[0],
+        common::errors::InvalidArgument(
+            "ShapeError: Expected input batch_size to match label batch_size,"
+            "But received: the Input(x) batch_size is [%s], the Input(label) "
+            " batch_size is [%s].",
+            input_shape.shape()[0],
+            label_shape.shape()[0]));
 
-    if (op->operand_source(2)) {
-      const auto &weight_shape_or_data =
+    if (op->operand_source(2)) {  // weight
+      const symbol::ShapeOrDataDimExprs &weight_shape =
           infer_context->GetShapeOrDataForValue(op->operand_source(2));
-      std::vector<symbol::DimExpr> weight_shape = weight_shape_or_data.shape();
-
-      PADDLE_ENFORCE_EQ(weight_shape.size(),
+      PADDLE_ENFORCE_EQ(weight_shape.shape().size(),
                         1,
                         common::errors::InvalidArgument(
                             "Input(Weight) should be a 1D tensor."));
-      infer_context->AddEqualCstr(input_shape[1], weight_shape[0]);
+      PADDLE_ENFORCE_EQ(
+          input_shape.shape()[1],
+          weight_shape.shape()[0],
+          common::errors::InvalidArgument(
+              "Expected input tensor Weight's size should equal "
+              "to the first dimension of the input tensor X. But received "
+              "Weight's "
+              "size is %d, the first dimension of input X is %d",
+              weight_shape.shape()[0],
+              input_shape.shape()[1]));
     }
   }
 
-  std::string reduction =
-      op->attribute<pir::StrAttribute>("reduction").AsString();
-
-  std::vector<symbol::DimExpr> out_shape;
-  if (input_shape.size() == 2) {
+  // Determine output shape
+  std::vector<symbol::DimExpr> out_dims;
+  if (input_dims_size == 2) {
+    std::string reduction =
+        op->attribute<pir::StrAttribute>("reduction").AsString();
     if (reduction == "none") {
-      out_shape = {input_shape[0]};
+      out_dims = {input_shape.shape()[0]};
+    } else {
+      out_dims = {};  // scalar
     }
-  } else if (input_shape.size() == 4) {
-    PADDLE_ENFORCE_EQ(label_shape.size(),
+  } else if (input_dims_size == 4) {
+    PADDLE_ENFORCE_EQ(label_shape.shape().size(),
                       3,
                       common::errors::InvalidArgument(
                           "Expected Input(Label) dimensions=3, received %d.",
-                          label_shape.size()));
+                          label_shape.shape().size()));
+    PADDLE_ENFORCE_EQ(
+        input_shape.shape()[0],
+        label_shape.shape()[0] && input_shape.shape()[2],
+        label_shape.shape()[1] && input_shape.shape()[3],
+        label_shape.shape()[2],
+        common::errors::InvalidArgument("Input(X) tensor shape should "
+                                        "match to Input(Label) tensor "
+                                        "shape."));
 
-    infer_context->AddEqualCstr(input_shape[0], label_shape[0]);
-    infer_context->AddEqualCstr(input_shape[2], label_shape[1]);
-    infer_context->AddEqualCstr(input_shape[3], label_shape[2]);
-
+    std::string reduction =
+        op->attribute<pir::StrAttribute>("reduction").AsString();
     if (reduction == "none") {
-      out_shape = {input_shape[0], input_shape[2], input_shape[3]};
+      out_dims = {input_shape.shape()[0],
+                  input_shape.shape()[2],
+                  input_shape.shape()[3]};
+    } else {
+      out_dims = {};  // scalar
     }
   }
 
-  if (reduction != "none") {
-    out_shape = {};
-  }
-
+  // Set output shapes
   infer_context->SetShapeOrDataForValue(
       op->result(0),
-      symbol::ShapeOrDataDimExprs{
-          symbol::TensorShapeOrDataDimExprs(out_shape)});
-
+      symbol::ShapeOrDataDimExprs{symbol::TensorShapeOrDataDimExprs(out_dims)});
   infer_context->SetShapeOrDataForValue(
       op->result(1),
       symbol::ShapeOrDataDimExprs{symbol::TensorShapeOrDataDimExprs({})});
