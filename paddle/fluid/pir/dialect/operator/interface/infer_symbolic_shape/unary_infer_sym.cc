@@ -561,6 +561,25 @@ bool ChannelShuffleOpInferSymbolicShape(
   return true;
 }
 
+bool CheckNumericsOpInferSymbolicShape(
+    pir::Operation *op, pir::InferSymbolicShapeContext *infer_context) {
+  const symbol::ShapeOrDataDimExprs &tensor_shape =
+      infer_context->GetShapeOrDataForValue(op->operand_source(0));
+
+  symbol::TensorShapeOrDataDimExprs stats_shape({symbol::DimExpr(3)});
+  symbol::TensorShapeOrDataDimExprs values_shape({symbol::DimExpr(3)});
+
+  infer_context->SetShapeOrDataForValue(
+      op->result(0), symbol::ShapeOrDataDimExprs{stats_shape});
+  infer_context->SetDtypeForValue(op->result(0), symbol::DataType::INT64);
+
+  infer_context->SetShapeOrDataForValue(
+      op->result(1), symbol::ShapeOrDataDimExprs{values_shape});
+  infer_context->SetDtypeForValue(op->result(1), symbol::DataType::FLOAT32);
+
+  return true;
+}
+
 // bool CropOpInferSymbolicShape(pir::Operation *op,
 //                               pir::InferSymbolicShapeContext *infer_context)
 //                               {
