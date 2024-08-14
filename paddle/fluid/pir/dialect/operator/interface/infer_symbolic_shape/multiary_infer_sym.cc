@@ -1154,6 +1154,76 @@ bool FlashAttnOpInferSymbolicShape(
 //   return true;
 // }
 
+bool GraphReindexOpInferSymbolicShape(
+    pir::Operation *op, pir::InferSymbolicShapeContext *infer_context) {
+  const symbol::ShapeOrDataDimExprs &x_shape_or_data =
+      infer_context->GetShapeOrDataForValue(op->operand_source(0));
+  const symbol::ShapeOrDataDimExprs &neighbors_shape_or_data =
+      infer_context->GetShapeOrDataForValue(op->operand_source(1));
+  const symbol::ShapeOrDataDimExprs &count_shape_or_data =
+      infer_context->GetShapeOrDataForValue(op->operand_source(2));
+  const symbol::ShapeOrDataDimExprs &hashtable_value_shape_or_data =
+      infer_context->GetShapeOrDataForValue(op->operand_source(3));
+  const symbol::ShapeOrDataDimExprs &hashtable_index_shape_or_data =
+      infer_context->GetShapeOrDataForValue(op->operand_source(4));
+
+  std::vector<symbol::DimExpr> x_dims = x_shape_or_data.shape();
+  std::vector<symbol::DimExpr> neighbors_dims = neighbors_shape_or_data.shape();
+  std::vector<symbol::DimExpr> count_dims = count_shape_or_data.shape();
+  std::vector<symbol::DimExpr> hashtable_value_dims =
+      hashtable_value_shape_or_data.shape();
+  std::vector<symbol::DimExpr> hashtable_index_dims =
+      hashtable_index_shape_or_data.shape();
+
+  auto GraphReindexShapeCheck = [&](const std::vector<symbol::DimExpr> &dims,
+                                    const std::string &tensor_name) {
+    if (dims.size() == 2) {
+      PADDLE_ENFORCE_EQ(dims[1],
+                        1,
+                        common::errors::InvalidArgument(
+                            "The last dim of %s should be 1 when it "
+                            "is 2D, but we get %d",
+                            tensor_name,
+                            dims[1]));
+    } else {
+      PADDLE_ENFORCE_EQ(
+          dims.size(),
+          1,
+          common::errors::InvalidArgument(
+              "The %s should be 1D, when it is not 2D, but we get %d",
+              tensor_name,
+              dims.size()));
+    }
+  };
+
+  GraphReindexShapeCheck(x_dims, "X");
+  GraphReindexShapeCheck(neighbors_dims, "Neighbors");
+  GraphReindexShapeCheck(count_dims, "Count");
+
+  bool flag_buffer_hashtable = hashtable_value_shape_or_data.is_initialized() &&
+                               hashtable_index_shape_or_data.is_initialized();
+  if (flag_buffer_hashtable) {
+    GraphReindexShapeCheck(hashtable_value_dims, "HashTable_Value");
+    GraphReindexShapeCheck(hashtable_index_dims, "HashTable_Index");
+  }
+
+  std::vector<symbol::DimExpr> output_shape{-1};
+  infer_context->SetShapeOrDataForValue(
+      op->result(0),
+      symbol::ShapeOrDataDimExprs{
+          symbol::TensorShapeOrDataDimExprs(output_shape)});
+  infer_context->SetShapeOrDataForValue(
+      op->result(1),
+      symbol::ShapeOrDataDimExprs{
+          symbol::TensorShapeOrDataDimExprs(output_shape)});
+  infer_context->SetShapeOrDataForValue(
+      op->result(2),
+      symbol::ShapeOrDataDimExprs{
+          symbol::TensorShapeOrDataDimExprs(output_shape)});
+
+  return true;
+}
+
 // bool GruOpInferSymbolicShape(pir::Operation *op,
 //                              pir::InferSymbolicShapeContext *infer_context)
 //                              {
